@@ -22,12 +22,15 @@ CONTROL_ROD_SPEED = 2
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Nuclear Fission Simulation")
 
+# Define random_start variable
+random_start = True  # Set this to False for fully U-235
+
 # Define U-235 atoms in a 10x20 grid
 grid_rows, grid_cols = 10, 10
 margin_x, margin_y = 30, 30
 space_x = (WIDTH - 2 * margin_x) // (grid_cols - 1)
 space_y = (HEIGHT - 2 * margin_y) // (grid_rows - 1)
-u235_atoms = [(margin_x + j * space_x, margin_y + i * space_y, random.random() < 0.04) for i in range(grid_rows) for j in range(grid_cols)]
+u235_atoms = [(margin_x + j * space_x, margin_y + i * space_y, random.random() < 0.04 if random_start else True) for i in range(grid_rows) for j in range(grid_cols)]
 
 # Define control rods
 control_rods = [(j * space_x + margin_x, HEIGHT // 2 - CONTROL_ROD_HEIGHT // 2) for j in range(1, grid_cols, 2)]
