@@ -37,14 +37,15 @@ u235_atoms = [(margin_x + j * space_x, margin_y + i * space_y, random.random() <
 xenon_atoms = []
 
 # Define control rods
-control_rods = [(j * space_x + margin_x, HEIGHT // 2 - CONTROL_ROD_HEIGHT // 2) for j in range(1, grid_cols, 2)]
-control_rods.append((10, HEIGHT // 2 - CONTROL_ROD_HEIGHT // 2))  # Add a control rod to the leftmost side
+# Define control rods
+# Placing a control rod in the middle of two columns
+# Define control rods
+control_rods = []
+for j in range(1, grid_cols):
+    if j % 2 == 0:
+        middle_x = margin_x + (j - 1) * space_x + space_x // 2
+        control_rods.append((middle_x, HEIGHT // 2 - CONTROL_ROD_HEIGHT // 2))
 
-# Move control rods 20 pixels to the right
-def move_control_rods_right(control_rods, offset):
-    return [(rod[0] + offset, rod[1]) for rod in control_rods]
-
-control_rods = move_control_rods_right(control_rods, 20)
 
 # Define neutrons
 neutrons = [(random.randint(50, WIDTH-50), random.randint(50, HEIGHT-50), random.randint(-3, 3), random.randint(-3, 3)) for _ in range(10)]
@@ -71,6 +72,7 @@ def draw_entities():
     pygame.display.flip()
 
 # Function to move neutrons
+# Function to move neutrons
 def move_neutrons():
     global neutrons, u235_atoms, xenon_atoms
     new_neutrons = []
@@ -91,7 +93,7 @@ def move_neutrons():
                 dist = math.hypot(neutron[0] - u235_atoms[j][0], neutron[1] - u235_atoms[j][1])
                 if dist < 15:
                     u235_atoms[j] = (u235_atoms[j][0], u235_atoms[j][1], False)
-                    if random.random() < 0.066:  # 6.6% chance to produce a Xenon atom
+                    if random.random() < 0.066: #6.6% chance to produce a Xenon atom
                         xenon_atoms.append((u235_atoms[j][0], u235_atoms[j][1], 0))
                     for _ in range(3):
                         angle = random.uniform(0, 2 * math.pi)
@@ -103,8 +105,9 @@ def move_neutrons():
                 original_neutrons.pop(i)
                 break
 
-        # Check for collisions with Xenon atoms after ensuring the neutron has moved away
+        # Check for collisions with Xenon atoms
         for k in range(len(xenon_atoms) - 1, -1, -1):
+            # Ensure neutron has moved away from the Xenon atom before checking for absorption
             if k < len(xenon_atoms) and math.hypot(neutron[0] - xenon_atoms[k][0], neutron[1] - xenon_atoms[k][1]) >= 15:
                 if xenon_atoms[k][2] < 2 and math.hypot(neutron[0] - xenon_atoms[k][0], neutron[1] - xenon_atoms[k][1]) < 15:
                     xenon_atoms[k] = (xenon_atoms[k][0], xenon_atoms[k][1], xenon_atoms[k][2] + 1)
@@ -112,6 +115,7 @@ def move_neutrons():
                     break
 
     neutrons = original_neutrons + new_neutrons
+
 
 # Function to regenerate uranium and emit neutrons randomly
 def regenerate_and_emit():
