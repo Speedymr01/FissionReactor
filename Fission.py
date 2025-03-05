@@ -6,6 +6,7 @@ import csv
 
 pygame.init()
 
+
 WIDTH, HEIGHT = 600, 600
 
 WHITE, BLUE, GREY, BLACK = (255, 255, 255), (0, 0, 255), (128, 128, 128), (10, 10, 10)
