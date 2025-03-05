@@ -6,7 +6,8 @@ import csv
 
 pygame.init()
 
-WIDTH, HEIGHT = 500, 500
+WIDTH, HEIGHT = 600, 600
+
 WHITE, BLUE, GREY, BLACK = (255, 255, 255), (0, 0, 255), (128, 128, 128), (10, 10, 10)
 RED, DARK_GREY, PASTEL_ORANGE = (255, 0, 0), (10, 10, 10), (255, 182, 77)
 FPS = 60
@@ -17,9 +18,12 @@ pygame.display.set_caption("Nuclear Fission Simulation")
 random_start = False
 auto_control = False  # Variable to track control mode
 grid_rows, grid_cols = 10, 10
-margin_x, margin_y = 30, 30
+margin_x, margin_y = 100, 100
 space_x = (WIDTH - 2 * margin_x) // (grid_cols - 1)
 space_y = (HEIGHT - 2 * margin_y) // (grid_rows - 1)
+SIM_LEFT, SIM_TOP = margin_x - 20, margin_y - 20
+SIM_RIGHT, SIM_BOTTOM = WIDTH - margin_x + 20, HEIGHT - margin_y + 20
+
 
 u235_atoms = [(margin_x + j * space_x, margin_y + i * space_y, random.random() < 0.04 if random_start else True) for i in range(grid_rows) for j in range(grid_cols)]
 xenon_atoms, control_rods = [], []
@@ -47,11 +51,16 @@ xenon_mask = pygame.mask.from_surface(xenon_surface)
 
 # Collision check function
 def check_collision(entity1_pos, entity2_pos, mask1, mask2):
-    offset = (int(entity2_pos[0] - entity1_pos[0]), int(entity2_pos[1] - entity1_pos[1]))
+    offset = (int(entity2_pos[0] - entity1_pos[0]) + 4, int(entity2_pos[1] - entity1_pos[1]) + 4)
     return mask1.overlap(mask2, offset) is not None
+
 
 def draw_entities():
     screen.fill(WHITE)
+
+    # Draw the updated simulation boundary
+    pygame.draw.rect(screen, BLACK, (SIM_LEFT, SIM_TOP, SIM_RIGHT - SIM_LEFT, SIM_BOTTOM - SIM_TOP), 3)
+
     for atom in u235_atoms:
         color = BLUE if atom[2] else GREY
         pygame.draw.circle(screen, color, (int(atom[0]), int(atom[1])), 7)
@@ -75,6 +84,7 @@ def draw_entities():
     pygame.display.flip()
 
 
+
 def move_neutrons():
     global neutrons, u235_atoms, xenon_atoms
     new_neutrons = []
@@ -83,15 +93,19 @@ def move_neutrons():
 
     for neutron in original_neutrons:
         # Update neutron position
-        neutron = (neutron[0] + neutron[2], neutron[1] + neutron[3], neutron[2], neutron[3], neutron[4])
-        if neutron[0] < 0 or neutron[0] > WIDTH:
-            neutron = (neutron[0], neutron[1], -neutron[2], neutron[3], neutron[4])
-        if neutron[1] < 0 or neutron[1] > HEIGHT:
-            neutron = (neutron[0], neutron[1], neutron[2], -neutron[3], neutron[4])
+        x, y, vx, vy, spawn_time = neutron
+        x += vx
+        y += vy
 
-        # Collision with U-235 atoms
+        # Check for collisions with updated simulation boundaries
+        if x < SIM_LEFT or x > SIM_RIGHT:
+            vx = -vx  # Reverse horizontal velocity
+        if y < SIM_TOP or y > SIM_BOTTOM:
+            vy = -vy  # Reverse vertical velocity
+
+        # Existing collision logic for U-235, Xenon, and control rods
         for i, atom in enumerate(u235_atoms):
-            if atom[2] and check_collision(neutron[:2], atom[:2], neutron_mask, atom_mask):
+            if atom[2] and check_collision((x, y), atom[:2], neutron_mask, atom_mask):
                 u235_atoms[i] = (atom[0], atom[1], False)
                 if random.random() < 0.066:
                     xenon_atoms.append((atom[0], atom[1], 0))
@@ -100,22 +114,22 @@ def move_neutrons():
                     new_neutrons.append((atom[0], atom[1], 3 * math.cos(angle), 3 * math.sin(angle), time.time()))
                 break
 
-        # Collision with Xenon atoms
         for i, xenon in enumerate(xenon_atoms):
-            if check_collision(neutron[:2], xenon[:2], neutron_mask, xenon_mask):
+            if check_collision((x, y), xenon[:2], neutron_mask, xenon_mask):
                 xenon_atoms[i] = (xenon[0], xenon[1], xenon[2] + 1)
                 break
 
-        # Collision with control rods
         for rod in control_rods:
             rod_rect = pygame.Rect(rod[0], rod[1], CONTROL_ROD_WIDTH, CONTROL_ROD_HEIGHT)
-            if rod_rect.collidepoint(neutron[:2]):
+            if rod_rect.collidepoint((x, y)):
                 break
         else:
             # If no collisions, keep neutron
-            new_neutrons.append(neutron)
+            new_neutrons.append((x, y, vx, vy, spawn_time))
 
     neutrons = new_neutrons
+
+
 
 def regenerate_and_emit():
     if random.random() < 0.10:
