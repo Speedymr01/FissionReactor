@@ -16,7 +16,7 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Nuclear Fission Simulation")
 
 random_start = False
-auto_control = True  # Variable to track control mode
+auto_control = False  # Variable to track control mode
 
 grid_rows, grid_cols = 10, 10
 margin_x, margin_y = 30, 30
@@ -29,7 +29,8 @@ for j in range(1, grid_cols):
         middle_x = margin_x + (j - 1) * space_x + space_x // 2
         control_rods.append((middle_x, HEIGHT // 2 - CONTROL_ROD_HEIGHT // 2))
 
-neutrons = [(random.randint(50, WIDTH-50), random.randint(50, HEIGHT-50), random.randint(-3, 3), random.randint(-3, 3)) for _ in range(10)]
+neutron_grace_period = 1
+neutrons = [(random.randint(50, WIDTH - 50), random.randint(50, HEIGHT - 50), random.randint(-3, 3), random.randint(-3, 3), time.time()) for _ in range(10)]
 font = pygame.font.SysFont(None, 48)
 
 def draw_entities():
@@ -51,37 +52,46 @@ def draw_entities():
 def move_neutrons():
     global neutrons, u235_atoms, xenon_atoms
     new_neutrons = []
-    current_time = time.time()
     original_neutrons = neutrons[:]
+    current_time = time.time()
+
     for i in range(len(original_neutrons) - 1, -1, -1):
         neutron = original_neutrons[i]
-        neutron = (neutron[0] + neutron[2], neutron[1] + neutron[3], neutron[2], neutron[3])
+        neutron = (neutron[0] + neutron[2], neutron[1] + neutron[3], neutron[2], neutron[3], neutron[4])
+
         if neutron[0] < 0 or neutron[0] > WIDTH:
-            neutron = (neutron[0], neutron[1], -neutron[2], neutron[3])
+            neutron = (neutron[0], neutron[1], -neutron[2], neutron[3], neutron[4])
         if neutron[1] < 0 or neutron[1] > HEIGHT:
-            neutron = (neutron[0], neutron[1], neutron[2], -neutron[3])
+            neutron = (neutron[0], neutron[1], neutron[2], -neutron[3], neutron[4])
+
         original_neutrons[i] = neutron
-        for j in range(len(u235_atoms)):
-            if u235_atoms[j][2]:
-                dist = math.hypot(neutron[0] - u235_atoms[j][0], neutron[1] - u235_atoms[j][1])
-                if dist < 15:
-                    u235_atoms[j] = (u235_atoms[j][0], u235_atoms[j][1], False)
-                    if random.random() < 0.066:
-                        xenon_atoms.append((u235_atoms[j][0], u235_atoms[j][1], 0, current_time))
-                    for _ in range(3):
-                        angle = random.uniform(0, 2 * math.pi)
-                        new_neutrons.append((u235_atoms[j][0], u235_atoms[j][1], 3 * math.cos(angle), 3 * math.sin(angle)))
-        for rod in control_rods:
-            if rod[0] < neutron[0] < rod[0] + CONTROL_ROD_WIDTH and rod[1] < neutron[1] < rod[1] + CONTROL_ROD_HEIGHT:
-                original_neutrons.pop(i)
-                break
-        for k in range(len(xenon_atoms) - 1, -1, -1):
-            if k < len(xenon_atoms) and math.hypot(neutron[0] - xenon_atoms[k][0], neutron[1] - xenon_atoms[k][1]) < 15:
-                if current_time - xenon_atoms[k][3] >= 2:
-                    xenon_atoms[k] = (xenon_atoms[k][0], xenon_atoms[k][1], xenon_atoms[k][2] + 1, xenon_atoms[k][3])
-                original_neutrons.pop(i)
-                break
+
+        # Check if the neutron has passed the grace period
+        if current_time - neutron[4] >= neutron_grace_period:
+            for j in range(len(u235_atoms)):
+                if u235_atoms[j][2]:
+                    dist = math.hypot(neutron[0] - u235_atoms[j][0], neutron[1] - u235_atoms[j][1])
+                    if dist < 15:
+                        u235_atoms[j] = (u235_atoms[j][0], u235_atoms[j][1], False)
+                        if random.random() < 0.066:
+                            xenon_atoms.append((u235_atoms[j][0], u235_atoms[j][1], 0))
+                        for _ in range(3):
+                            angle = random.uniform(0, 2 * math.pi)
+                            new_neutrons.append((u235_atoms[j][0], u235_atoms[j][1], 3 * math.cos(angle), 3 * math.sin(angle), time.time()))
+
+            for rod in control_rods:
+                if rod[0] < neutron[0] < rod[0] + CONTROL_ROD_WIDTH and rod[1] < neutron[1] < rod[1] + CONTROL_ROD_HEIGHT:
+                    original_neutrons.pop(i)
+                    break
+
+            for k in range(len(xenon_atoms) - 1, -1, -1):
+                if k < len(xenon_atoms) and math.hypot(neutron[0] - xenon_atoms[k][0], neutron[1] - xenon_atoms[k][1]) < 15:
+                    xenon_atoms[k] = (xenon_atoms[k][0], xenon_atoms[k][1], xenon_atoms[k][2] + 1)
+                    original_neutrons.pop(i)
+                    break
+
     neutrons = original_neutrons + new_neutrons
+
     for k in range(len(xenon_atoms) - 1, -1, -1):
         if xenon_atoms[k][2] >= 2:
             u235_atoms.append((xenon_atoms[k][0], xenon_atoms[k][1], False))
@@ -95,7 +105,7 @@ def regenerate_and_emit():
         i = random.randint(0, grid_rows * grid_cols - 1)
         if not u235_atoms[i][2]:
             angle = random.uniform(0, 2 * math.pi)
-            neutrons.append((u235_atoms[i][0], u235_atoms[i][1], 3 * math.cos(angle), 3 * math.sin(angle)))
+            neutrons.append((u235_atoms[i][0], u235_atoms[i][1], 3 * math.cos(angle), 3 * math.sin(angle), time.time()))
 
 def move_control_rods(keys):
     global control_rods, auto_control
@@ -114,7 +124,6 @@ def move_control_rods(keys):
             if keys[pygame.K_DOWN]:
                 if control_rods[i][1] + CONTROL_ROD_HEIGHT + CONTROL_ROD_SPEED <= HEIGHT:
                     control_rods[i] = (control_rods[i][0], control_rods[i][1] + CONTROL_ROD_SPEED)
-
 
 def toggle_control_mode(keys):
     global auto_control
