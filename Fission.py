@@ -116,8 +116,12 @@ def move_neutrons():
 
         for i, xenon in enumerate(xenon_atoms):
             if check_collision((x, y), xenon[:2], neutron_mask, xenon_mask):
-                xenon_atoms[i] = (xenon[0], xenon[1], xenon[2] + 1)
+                xenon_atoms[i] = (xenon[0], xenon[1], xenon[2] + 1)  # Increment neutron absorption count
+                if xenon_atoms[i][2] >= 2:  # If it absorbs 2 neutrons
+                    u235_atoms.append((xenon[0], xenon[1], True))  # Revert to grey atom (Uranium)
+                    xenon_atoms.pop(i)  # Remove the Xenon atom
                 break
+
 
         for rod in control_rods:
             rod_rect = pygame.Rect(rod[0], rod[1], CONTROL_ROD_WIDTH, CONTROL_ROD_HEIGHT)
