@@ -6,7 +6,6 @@ import csv
 
 pygame.init()
 
-
 WIDTH, HEIGHT = 600, 600
 
 WHITE, BLUE, GREY, BLACK = (255, 255, 255), (0, 0, 255), (128, 128, 128), (10, 10, 10)
@@ -20,18 +19,16 @@ random_start = False
 auto_control = False  # Variable to track control mode
 grid_rows, grid_cols = 10, 10
 margin_x, margin_y = 100, 100
-space_x = (WIDTH - 2 * margin_x) // (grid_cols - 1)
-space_y = (HEIGHT - 2 * margin_y) // (grid_rows - 1)
+space_x = (WIDTH - 2 * margin_x) // grid_cols
+space_y = (HEIGHT - 2 * margin_y) // grid_rows
 SIM_LEFT, SIM_TOP = margin_x - 20, margin_y - 20
 SIM_RIGHT, SIM_BOTTOM = WIDTH - margin_x + 20, HEIGHT - margin_y + 20
 
-
-u235_atoms = [(margin_x + j * space_x, margin_y + i * space_y, random.random() < 0.04 if random_start else True) for i in range(grid_rows) for j in range(grid_cols)]
+u235_atoms = [(margin_x + j * space_x + space_x // 2, margin_y + i * space_y + space_y // 2, random.random() < 0.04 if random_start else True) for i in range(grid_rows) for j in range(grid_cols)]
 xenon_atoms, control_rods = [], []
-for j in range(1, grid_cols):
-    if j % 2 == 0:
-        middle_x = margin_x + (j - 1) * space_x + space_x // 2
-        control_rods.append((middle_x, HEIGHT // 2 - CONTROL_ROD_HEIGHT // 2))
+for j in range(1, grid_cols, 2):
+    middle_x = margin_x + j * space_x
+    control_rods.append((middle_x, HEIGHT // 2 - CONTROL_ROD_HEIGHT // 2))
 
 neutron_grace_period = 1
 neutrons = [(random.randint(50, WIDTH - 50), random.randint(50, HEIGHT - 50), random.randint(-3, 3), random.randint(-3, 3), time.time()) for _ in range(10)]
@@ -50,11 +47,14 @@ xenon_surface = pygame.Surface((14, 14), pygame.SRCALPHA)
 pygame.draw.circle(xenon_surface, PASTEL_ORANGE, (7, 7), 7)
 xenon_mask = pygame.mask.from_surface(xenon_surface)
 
+# Initialize water grid
+water_grid = [[0 for _ in range(grid_cols)] for _ in range(grid_rows)]
+last_water_update_time = time.time()
+
 # Collision check function
 def check_collision(entity1_pos, entity2_pos, mask1, mask2):
     offset = (int(entity2_pos[0] - entity1_pos[0]) + 4, int(entity2_pos[1] - entity1_pos[1]) + 4)
     return mask1.overlap(mask2, offset) is not None
-
 
 def draw_entities():
     screen.fill(WHITE)
@@ -62,13 +62,23 @@ def draw_entities():
     # Draw the updated simulation boundary
     pygame.draw.rect(screen, BLACK, (SIM_LEFT, SIM_TOP, SIM_RIGHT - SIM_LEFT, SIM_BOTTOM - SIM_TOP), 3)
 
+    # Draw water grid
+    for i in range(grid_rows):
+        for j in range(grid_cols):
+            color = WHITE
+            if water_grid[i][j] == 1:
+                color = RED
+            elif water_grid[i][j] == 2:
+                color = PASTEL_ORANGE
+            pygame.draw.rect(screen, color, (margin_x + j * space_x, margin_y + i * space_y, space_x, space_y))
+
     for atom in u235_atoms:
         color = BLUE if atom[2] else GREY
         pygame.draw.circle(screen, color, (int(atom[0]), int(atom[1])), 7)
     for neutron in neutrons:
         pygame.draw.circle(screen, BLACK, (int(neutron[0]), int(neutron[1])), 3)
     for rod in control_rods:
-        pygame.draw.rect(screen, DARK_GREY, (rod[0], rod[1], CONTROL_ROD_WIDTH, CONTROL_ROD_HEIGHT))
+        pygame.draw.rect(screen, DARK_GREY, (rod[0] - CONTROL_ROD_WIDTH // 2, rod[1], CONTROL_ROD_WIDTH, CONTROL_ROD_HEIGHT))
     for xenon in xenon_atoms:
         color = PASTEL_ORANGE if xenon[2] < 2 else GREY
         pygame.draw.circle(screen, color, (int(xenon[0]), int(xenon[1])), 7)
@@ -83,8 +93,6 @@ def draw_entities():
     screen.blit(fps_text, (10, 50))
 
     pygame.display.flip()
-
-
 
 # Add a list to keep track of Xenon atoms that need to be regenerated
 xenon_regeneration_queue = []
@@ -116,6 +124,11 @@ def move_neutrons():
                 for _ in range(3):
                     angle = random.uniform(0, 2 * math.pi)
                     new_neutrons.append((atom[0], atom[1], 3 * math.cos(angle), 3 * math.sin(angle), time.time()))
+                # Update water grid
+                grid_x = (atom[0] - margin_x) // space_x
+                grid_y = (atom[1] - margin_y) // space_y
+                if 0 <= grid_x < grid_cols and 0 <= grid_y < grid_rows:
+                    water_grid[grid_y][grid_x] = 1  # Hot
                 break
 
         for i, xenon in enumerate(xenon_atoms):
@@ -129,7 +142,7 @@ def move_neutrons():
                 break
 
         for rod in control_rods:
-            rod_rect = pygame.Rect(rod[0], rod[1], CONTROL_ROD_WIDTH, CONTROL_ROD_HEIGHT)
+            rod_rect = pygame.Rect(rod[0] - CONTROL_ROD_WIDTH // 2, rod[1], CONTROL_ROD_WIDTH, CONTROL_ROD_HEIGHT)
             if rod_rect.collidepoint((x, y)):
                 break
         else:
@@ -164,6 +177,18 @@ def regenerate_and_emit():
         if not u235_atoms[i][2]:
             angle = random.uniform(0, 2 * math.pi)
             neutrons.append((u235_atoms[i][0], u235_atoms[i][1], 3 * math.cos(angle), 3 * math.sin(angle), time.time()))
+
+def update_water_grid():
+    global water_grid, last_water_update_time
+    current_time = time.time()
+    if current_time - last_water_update_time >= 3:  # Update every 3 seconds
+        for i in range(grid_rows):
+            for j in range(grid_cols):
+                if water_grid[i][j] > 0:
+                    water_grid[i][j] += 1
+                    if water_grid[i][j] > 2:
+                        water_grid[i][j] = 0  # Reset to cool
+        last_water_update_time = current_time
 
 def move_control_rods(keys):
     global control_rods, auto_control
@@ -236,6 +261,9 @@ while running:
     # Regenerate Xenon atoms as standard uranium
     regenerate_xenon_atoms()
 
+    # Update water grid
+    update_water_grid()
+
     # Redraw all entities (U-235 atoms, neutrons, Xenon, control rods)
     draw_entities()
 
@@ -246,7 +274,6 @@ while running:
 
     # Cap the frame rate
     clock.tick(FPS)
-
 
 # Quit Pygame and save results to CSV
 pygame.quit()
