@@ -86,8 +86,11 @@ def draw_entities():
 
 
 
+# Add a list to keep track of Xenon atoms that need to be regenerated
+xenon_regeneration_queue = []
+
 def move_neutrons():
-    global neutrons, u235_atoms, xenon_atoms
+    global neutrons, u235_atoms, xenon_atoms, xenon_regeneration_queue
     new_neutrons = []
     original_neutrons = neutrons[:]
     current_time = time.time()
@@ -118,6 +121,11 @@ def move_neutrons():
         for i, xenon in enumerate(xenon_atoms):
             if check_collision((x, y), xenon[:2], neutron_mask, xenon_mask):
                 xenon_atoms[i] = (xenon[0], xenon[1], xenon[2] + 1)
+                if xenon_atoms[i][2] >= 2:
+                    # Add Xenon atom to the regeneration queue with a random delay
+                    regeneration_time = current_time + random.uniform(1, 30)
+                    xenon_regeneration_queue.append((xenon[0], xenon[1], regeneration_time))
+                    xenon_atoms.pop(i)  # Remove Xenon atom after absorbing two neutrons
                 break
 
         for rod in control_rods:
@@ -130,7 +138,22 @@ def move_neutrons():
 
     neutrons = new_neutrons
 
+def regenerate_xenon_atoms():
+    global u235_atoms, xenon_regeneration_queue
+    current_time = time.time()
+    new_queue = []
 
+    for x, y, regeneration_time in xenon_regeneration_queue:
+        if current_time >= regeneration_time:
+            # Regenerate as standard uranium
+            for i, atom in enumerate(u235_atoms):
+                if (atom[0], atom[1]) == (x, y):
+                    u235_atoms[i] = (x, y, True)
+                    break
+        else:
+            new_queue.append((x, y, regeneration_time))
+
+    xenon_regeneration_queue = new_queue
 
 def regenerate_and_emit():
     if random.random() < 0.10:
@@ -209,6 +232,9 @@ while running:
 
     # Regenerate U-235 atoms and emit new neutrons
     regenerate_and_emit()
+
+    # Regenerate Xenon atoms as standard uranium
+    regenerate_xenon_atoms()
 
     # Redraw all entities (U-235 atoms, neutrons, Xenon, control rods)
     draw_entities()
