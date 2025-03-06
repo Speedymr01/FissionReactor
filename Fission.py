@@ -8,8 +8,8 @@ pygame.init()
 
 WIDTH, HEIGHT = 600, 600
 
-WHITE, BLUE, GREY, BLACK = (255, 255, 255), (0, 0, 255), (128, 128, 128), (10, 10, 10)
-RED, DARK_GREY, PASTEL_ORANGE = (255, 0, 0), (10, 10, 10), (255, 182, 77)
+WHITE, BLUE, GREY, BLACK, DARK_GREY = (255, 255, 255), (173, 216, 230), (128, 128, 128), (10, 10, 10), (64, 64, 64)
+RED, ORANGE, LIGHT_BLUE = (255, 0, 0), (255, 165, 0), (173, 216, 230)
 FPS = 60
 CONTROL_ROD_WIDTH, CONTROL_ROD_HEIGHT, CONTROL_ROD_SPEED = 10, HEIGHT, 2
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -25,13 +25,13 @@ SIM_LEFT, SIM_TOP = margin_x - 20, margin_y - 20
 SIM_RIGHT, SIM_BOTTOM = WIDTH - margin_x + 20, HEIGHT - margin_y + 20
 
 u235_atoms = [(margin_x + j * space_x + space_x // 2, margin_y + i * space_y + space_y // 2, random.random() < 0.04 if random_start else True) for i in range(grid_rows) for j in range(grid_cols)]
-xenon_atoms, control_rods = [], []
+control_rods = []
 for j in range(1, grid_cols, 2):
     middle_x = margin_x + j * space_x
     control_rods.append((middle_x, HEIGHT // 2 - CONTROL_ROD_HEIGHT // 2))
 
 neutron_grace_period = 1
-neutrons = [(random.randint(50, WIDTH - 50), random.randint(50, HEIGHT - 50), random.randint(-3, 3), random.randint(-3, 3), time.time()) for _ in range(10)]
+neutrons = [(random.randint(50, WIDTH - 50), random.randint(50, HEIGHT - 50), random.randint(-3, 3), random.randint(-3, 3), time.time(), 0) for _ in range(10)]
 font = pygame.font.SysFont(None, 48)
 
 # Create masks
@@ -43,17 +43,26 @@ atom_surface = pygame.Surface((14, 14), pygame.SRCALPHA)
 pygame.draw.circle(atom_surface, BLUE, (7, 7), 7)
 atom_mask = pygame.mask.from_surface(atom_surface)
 
-xenon_surface = pygame.Surface((14, 14), pygame.SRCALPHA)
-pygame.draw.circle(xenon_surface, PASTEL_ORANGE, (7, 7), 7)
-xenon_mask = pygame.mask.from_surface(xenon_surface)
-
 # Initialize water grid
 water_grid = [[0 for _ in range(grid_cols)] for _ in range(grid_rows)]
-last_water_update_time = time.time()
+water_temperature = [[0 for _ in range(grid_cols)] for _ in range(grid_rows)]
+last_heated_time = [[0 for _ in range(grid_cols)] for _ in range(grid_rows)]
+
+# Function to interpolate between two colors
+def interpolate_color(color1, color2, factor):
+    return tuple(int(color1[i] + (color2[i] - color1[i]) * factor) for i in range(3))
+
+# Function to get the color based on the water temperature
+def get_water_color(temperature, elapsed_time):
+    if elapsed_time < 1:
+        factor = elapsed_time
+        return interpolate_color(RED, LIGHT_BLUE, factor)
+    else:
+        return LIGHT_BLUE
 
 # Collision check function
 def check_collision(entity1_pos, entity2_pos, mask1, mask2):
-    offset = (int(entity2_pos[0] - entity1_pos[0]) + 4, int(entity2_pos[1] - entity1_pos[1]) + 4)
+    offset = (int(entity2_pos[0] - entity1_pos[0]), int(entity2_pos[1] - entity1_pos[1]))
     return mask1.overlap(mask2, offset) is not None
 
 def draw_entities():
@@ -63,13 +72,11 @@ def draw_entities():
     pygame.draw.rect(screen, BLACK, (SIM_LEFT, SIM_TOP, SIM_RIGHT - SIM_LEFT, SIM_BOTTOM - SIM_TOP), 3)
 
     # Draw water grid
+    current_time = time.time()
     for i in range(grid_rows):
         for j in range(grid_cols):
-            color = WHITE
-            if water_grid[i][j] == 1:
-                color = RED
-            elif water_grid[i][j] == 2:
-                color = PASTEL_ORANGE
+            elapsed_time = current_time - last_heated_time[i][j]
+            color = get_water_color(water_temperature[i][j], elapsed_time)
             pygame.draw.rect(screen, color, (margin_x + j * space_x, margin_y + i * space_y, space_x, space_y))
 
     for atom in u235_atoms:
@@ -79,9 +86,6 @@ def draw_entities():
         pygame.draw.circle(screen, BLACK, (int(neutron[0]), int(neutron[1])), 3)
     for rod in control_rods:
         pygame.draw.rect(screen, DARK_GREY, (rod[0] - CONTROL_ROD_WIDTH // 2, rod[1], CONTROL_ROD_WIDTH, CONTROL_ROD_HEIGHT))
-    for xenon in xenon_atoms:
-        color = PASTEL_ORANGE if xenon[2] < 2 else GREY
-        pygame.draw.circle(screen, color, (int(xenon[0]), int(xenon[1])), 7)
 
     # Display neutron count
     neutron_count_text = font.render(f"Neutrons: {len(neutrons)}", True, BLACK)
@@ -94,51 +98,44 @@ def draw_entities():
 
     pygame.display.flip()
 
-# Add a list to keep track of Xenon atoms that need to be regenerated
-xenon_regeneration_queue = []
-
 def move_neutrons():
-    global neutrons, u235_atoms, xenon_atoms, xenon_regeneration_queue
+    global neutrons, u235_atoms, water_temperature, last_heated_time
     new_neutrons = []
     original_neutrons = neutrons[:]
     current_time = time.time()
 
     for neutron in original_neutrons:
         # Update neutron position
-        x, y, vx, vy, spawn_time = neutron
+        x, y, vx, vy, spawn_time, bounce_count = neutron
         x += vx
         y += vy
 
         # Check for collisions with updated simulation boundaries
         if x < SIM_LEFT or x > SIM_RIGHT:
             vx = -vx  # Reverse horizontal velocity
+            bounce_count += 1
         if y < SIM_TOP or y > SIM_BOTTOM:
             vy = -vy  # Reverse vertical velocity
+            bounce_count += 1
 
-        # Existing collision logic for U-235, Xenon, and control rods
+        # Delete neutrons that bounce more than 50 times
+        if bounce_count > 50:
+            continue
+
+        # Existing collision logic for U-235 and control rods
         for i, atom in enumerate(u235_atoms):
             if atom[2] and check_collision((x, y), atom[:2], neutron_mask, atom_mask):
                 u235_atoms[i] = (atom[0], atom[1], False)
-                if random.random() < 0.066:
-                    xenon_atoms.append((atom[0], atom[1], 0))
                 for _ in range(3):
                     angle = random.uniform(0, 2 * math.pi)
-                    new_neutrons.append((atom[0], atom[1], 3 * math.cos(angle), 3 * math.sin(angle), time.time()))
+                    new_neutrons.append((atom[0], atom[1], 3 * math.cos(angle), 3 * math.sin(angle), time.time(), 0))
                 # Update water grid
-                grid_x = (atom[0] - margin_x) // space_x
-                grid_y = (atom[1] - margin_y) // space_y
+                grid_x = int((atom[0] - margin_x) // space_x)
+                grid_y = int((atom[1] - margin_y) // space_y)
                 if 0 <= grid_x < grid_cols and 0 <= grid_y < grid_rows:
-                    water_grid[grid_y][grid_x] = 1  # Hot
-                break
-
-        for i, xenon in enumerate(xenon_atoms):
-            if check_collision((x, y), xenon[:2], neutron_mask, xenon_mask):
-                xenon_atoms[i] = (xenon[0], xenon[1], xenon[2] + 1)
-                if xenon_atoms[i][2] >= 2:
-                    # Add Xenon atom to the regeneration queue with a random delay
-                    regeneration_time = current_time + random.uniform(1, 30)
-                    xenon_regeneration_queue.append((xenon[0], xenon[1], regeneration_time))
-                    xenon_atoms.pop(i)  # Remove Xenon atom after absorbing two neutrons
+                    if current_time - last_heated_time[grid_y][grid_x] >= 1:
+                        water_temperature[grid_y][grid_x] = 1  # Heat up to red
+                        last_heated_time[grid_y][grid_x] = current_time
                 break
 
         for rod in control_rods:
@@ -147,26 +144,15 @@ def move_neutrons():
                 break
         else:
             # If no collisions, keep neutron
-            new_neutrons.append((x, y, vx, vy, spawn_time))
+            grid_x = int((x - margin_x) // space_x)
+            grid_y = int((y - margin_y) // space_y)
+            if 0 <= grid_x < grid_cols and 0 <= grid_y < grid_rows:
+                if current_time - last_heated_time[grid_y][grid_x] >= 1:
+                    water_temperature[grid_y][grid_x] = 1  # Heat up to red
+                    last_heated_time[grid_y][grid_x] = current_time
+            new_neutrons.append((x, y, vx, vy, spawn_time, bounce_count))
 
     neutrons = new_neutrons
-
-def regenerate_xenon_atoms():
-    global u235_atoms, xenon_regeneration_queue
-    current_time = time.time()
-    new_queue = []
-
-    for x, y, regeneration_time in xenon_regeneration_queue:
-        if current_time >= regeneration_time:
-            # Regenerate as standard uranium
-            for i, atom in enumerate(u235_atoms):
-                if (atom[0], atom[1]) == (x, y):
-                    u235_atoms[i] = (x, y, True)
-                    break
-        else:
-            new_queue.append((x, y, regeneration_time))
-
-    xenon_regeneration_queue = new_queue
 
 def regenerate_and_emit():
     if random.random() < 0.10:
@@ -176,19 +162,7 @@ def regenerate_and_emit():
         i = random.randint(0, grid_rows * grid_cols - 1)
         if not u235_atoms[i][2]:
             angle = random.uniform(0, 2 * math.pi)
-            neutrons.append((u235_atoms[i][0], u235_atoms[i][1], 3 * math.cos(angle), 3 * math.sin(angle), time.time()))
-
-def update_water_grid():
-    global water_grid, last_water_update_time
-    current_time = time.time()
-    if current_time - last_water_update_time >= 3:  # Update every 3 seconds
-        for i in range(grid_rows):
-            for j in range(grid_cols):
-                if water_grid[i][j] > 0:
-                    water_grid[i][j] += 1
-                    if water_grid[i][j] > 2:
-                        water_grid[i][j] = 0  # Reset to cool
-        last_water_update_time = current_time
+            neutrons.append((u235_atoms[i][0], u235_atoms[i][1], 3 * math.cos(angle), 3 * math.sin(angle), time.time(), 0))
 
 def move_control_rods(keys):
     global control_rods, auto_control
@@ -206,7 +180,7 @@ def move_control_rods(keys):
                 control_rods[i] = (control_rods[i][0], max(-CONTROL_ROD_HEIGHT + 10, control_rods[i][1] - CONTROL_ROD_SPEED))
             if keys[pygame.K_DOWN]:
                 if control_rods[i][1] + CONTROL_ROD_HEIGHT + CONTROL_ROD_SPEED <= HEIGHT:
-                    control_rods[i] = (control_rods[i][0], control_rods[i][1] + CONTROL_ROD_SPEED)
+                    control_rods[i] = (control_rods[i][0], min(HEIGHT - CONTROL_ROD_HEIGHT, control_rods[i][1] + CONTROL_ROD_SPEED))
 
 last_toggle_time = 0  # Initialize the last toggle time
 
@@ -258,13 +232,7 @@ while running:
     # Regenerate U-235 atoms and emit new neutrons
     regenerate_and_emit()
 
-    # Regenerate Xenon atoms as standard uranium
-    regenerate_xenon_atoms()
-
-    # Update water grid
-    update_water_grid()
-
-    # Redraw all entities (U-235 atoms, neutrons, Xenon, control rods)
+    # Redraw all entities (U-235 atoms, neutrons, control rods)
     draw_entities()
 
     # Append data for saving results
