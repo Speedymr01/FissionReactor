@@ -11,7 +11,7 @@ WIDTH, HEIGHT = 600, 600
 WHITE, BLUE, GREY, BLACK = (255, 255, 255), (0, 0, 255), (128, 128, 128), (10, 10, 10)
 RED, DARK_GREY, PASTEL_ORANGE = (255, 0, 0), (10, 10, 10), (255, 182, 77)
 FPS = 60
-CONTROL_ROD_WIDTH, CONTROL_ROD_HEIGHT, CONTROL_ROD_SPEED = 10, HEIGHT, 2
+
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Nuclear Fission Simulation")
 
@@ -23,6 +23,7 @@ space_x = (WIDTH - 2 * margin_x) // (grid_cols - 1)
 space_y = (HEIGHT - 2 * margin_y) // (grid_rows - 1)
 SIM_LEFT, SIM_TOP = margin_x - 20, margin_y - 20
 SIM_RIGHT, SIM_BOTTOM = WIDTH - margin_x + 20, HEIGHT - margin_y + 20
+CONTROL_ROD_WIDTH, CONTROL_ROD_HEIGHT, CONTROL_ROD_SPEED = 10, SIM_BOTTOM - SIM_TOP, 2
 
 
 u235_atoms = [(margin_x + j * space_x, margin_y + i * space_y, random.random() < 0.04 if random_start else True) for i in range(grid_rows) for j in range(grid_cols)]
@@ -30,7 +31,7 @@ xenon_atoms, control_rods = [], []
 for j in range(1, grid_cols):
     if j % 2 == 0:
         middle_x = margin_x + (j - 1) * space_x + space_x // 2
-        control_rods.append((middle_x, HEIGHT // 2 - CONTROL_ROD_HEIGHT // 2))
+        control_rods.append((middle_x, HEIGHT // 2 - CONTROL_ROD_HEIGHT))
 
 neutron_grace_period = 1
 neutrons = [(random.randint(50, WIDTH - 50), random.randint(50, HEIGHT - 50), random.randint(-3, 3), random.randint(-3, 3), time.time()) for _ in range(10)]
@@ -94,8 +95,8 @@ def move_neutrons():
     for neutron in original_neutrons:
         # Update neutron position
         x, y, vx, vy, spawn_time = neutron
-        x += vx
-        y += vy
+        x += vx / 2
+        y += vy / 2
 
         # Check for collisions with updated simulation boundaries
         if x < SIM_LEFT or x > SIM_RIGHT:
@@ -116,8 +117,12 @@ def move_neutrons():
 
         for i, xenon in enumerate(xenon_atoms):
             if check_collision((x, y), xenon[:2], neutron_mask, xenon_mask):
-                xenon_atoms[i] = (xenon[0], xenon[1], xenon[2] + 1)
+                xenon_atoms[i] = (xenon[0], xenon[1], xenon[2] + 1)  # Increment neutron absorption count
+                if xenon_atoms[i][2] >= 2:  # If it absorbs 2 neutrons
+                    u235_atoms.append((xenon[0], xenon[1], True))  # Revert to grey atom (Uranium)
+                    xenon_atoms.pop(i)  # Remove the Xenon atom
                 break
+
 
         for rod in control_rods:
             rod_rect = pygame.Rect(rod[0], rod[1], CONTROL_ROD_WIDTH, CONTROL_ROD_HEIGHT)
@@ -147,7 +152,7 @@ def move_control_rods(keys):
         total_neutrons = len(neutrons)
         for i in range(len(control_rods)):
             if total_neutrons > 50:
-                if control_rods[i][1] + CONTROL_ROD_HEIGHT + CONTROL_ROD_SPEED <= HEIGHT:
+                if control_rods[i][1] + CONTROL_ROD_HEIGHT + CONTROL_ROD_SPEED <= SIM_BOTTOM:
                     control_rods[i] = (control_rods[i][0], control_rods[i][1] + CONTROL_ROD_SPEED)
             elif total_neutrons < 50:
                 control_rods[i] = (control_rods[i][0], max(-CONTROL_ROD_HEIGHT + 10, control_rods[i][1] - CONTROL_ROD_SPEED))
@@ -156,7 +161,7 @@ def move_control_rods(keys):
             if keys[pygame.K_UP]:
                 control_rods[i] = (control_rods[i][0], max(-CONTROL_ROD_HEIGHT + 10, control_rods[i][1] - CONTROL_ROD_SPEED))
             if keys[pygame.K_DOWN]:
-                if control_rods[i][1] + CONTROL_ROD_HEIGHT + CONTROL_ROD_SPEED <= HEIGHT:
+                if control_rods[i][1] + CONTROL_ROD_HEIGHT + CONTROL_ROD_SPEED <= SIM_BOTTOM:
                     control_rods[i] = (control_rods[i][0], control_rods[i][1] + CONTROL_ROD_SPEED)
 
 last_toggle_time = 0  # Initialize the last toggle time
@@ -214,7 +219,9 @@ while running:
 
     # Append data for saving results
     neutron_counts.append(len(neutrons))
-    rod_position_percentage = max(0, min(100, 100 * (control_rods[0][1] / HEIGHT)))
+    rod_bottom_y = control_rods[0][1] + CONTROL_ROD_HEIGHT
+    rod_position_percentage = max(0, min(100, 100 * (rod_bottom_y - SIM_TOP) / (SIM_BOTTOM - SIM_TOP)))
+
     control_rod_percentages.append(rod_position_percentage)
 
     # Cap the frame rate
