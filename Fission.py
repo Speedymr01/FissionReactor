@@ -219,7 +219,9 @@ while running:
 
     # Append data for saving results
     neutron_counts.append(len(neutrons))
-    rod_position_percentage = max(0, min(100, 100 * (control_rods[0][1] / HEIGHT)))
+    rod_bottom_y = control_rods[0][1] + CONTROL_ROD_HEIGHT
+    rod_position_percentage = max(0, min(100, 100 * (rod_bottom_y - SIM_TOP) / (SIM_BOTTOM - SIM_TOP)))
+
     control_rod_percentages.append(rod_position_percentage)
 
     # Cap the frame rate
